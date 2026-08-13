@@ -15,12 +15,13 @@ python downloader_img.py https://example.com/gallery --max-pages 50 --max-depth 
 python resize_img.py
 ```
 
-Для Pinterest и других JavaScript-сайтов установите браузер Chromium и используйте режим браузера:
+Для Pinterest и других JavaScript-сайтов установите браузер Chromium. Для Pinterest режим браузера включается автоматически:
 
 ```powershell
 python -m pip install -r requirements.txt
 python -m playwright install chromium
-python downloader_img.py https://ru.pinterest.com/ --browser --max-pages 1 --max-images 50
+python downloader_img.py https://ru.pinterest.com/ --max-pages 1 --max-images 50
+python downloader_img.py "https://ru.pinterest.com/search/pins/?q=ангел%20и%20дявол" --max-pages 1 --max-images 50
 ```
 
 Все пути по умолчанию вычисляются относительно каталога проекта. Результат сохраняется в `downloads`, обработанные изображения — в `resized`.

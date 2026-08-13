@@ -101,6 +101,12 @@ def create_session() -> requests.Session:
     return session
 
 
+def requires_browser(url: str) -> bool:
+    """Определяет сайты, для которых обычного HTML-запроса недостаточно."""
+    hostname = (urlparse(url).hostname or "").lower().removeprefix("www.")
+    return hostname == "pinterest.com" or hostname.endswith(".pinterest.com")
+
+
 def browser_crawl(start_url: str, max_pages: int, max_depth: int, follow_links: bool) -> tuple[list[str], list[str]]:
     """Обходит динамический сайт через Chromium и собирает URLs изображений."""
     try:
@@ -280,7 +286,9 @@ def main() -> int:
     ensure_directories()
     session = create_session()
     try:
-        use_browser = CONFIG.use_browser or args.browser
+        # Pinterest автоматически запускается в браузерном режиме, потому что
+        # поисковая лента и изображения появляются после выполнения JavaScript.
+        use_browser = CONFIG.use_browser or args.browser or requires_browser(args.url)
         if use_browser:
             pages, images = browser_crawl(
                 args.url,
