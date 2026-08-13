@@ -101,6 +101,72 @@ def create_session() -> requests.Session:
     return session
 
 
+def browser_crawl(start_url: str, max_pages: int, max_depth: int, follow_links: bool) -> tuple[list[str], list[str]]:
+    """Обходит динамический сайт через Chromium и собирает URLs изображений."""
+    try:
+        from playwright.sync_api import sync_playwright
+    except ImportError as error:
+        raise RuntimeError(
+            "Для браузерного режима установите зависимости: "
+            "python -m pip install -r requirements.txt && "
+            "python -m playwright install chromium"
+        ) from error
+
+    origin = start_url
+    queue = deque([(start_url, 0)])
+    visited: set[str] = set()
+    pages: list[str] = []
+    images: set[str] = set()
+
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch(headless=CONFIG.browser_headless)
+        context = browser.new_context(
+            user_agent=CONFIG.user_agent,
+            locale="ru-RU",
+            viewport={"width": 1440, "height": 1000},
+        )
+        page = context.new_page()
+        try:
+            while queue and len(pages) < max_pages:
+                page_url, depth = queue.popleft()
+                if page_url in visited:
+                    continue
+                visited.add(page_url)
+                try:
+                    page.goto(page_url, wait_until="domcontentloaded", timeout=CONFIG.timeout * 1000)
+                    page.wait_for_timeout(1500)
+                    for _ in range(max(0, CONFIG.browser_scrolls)):
+                        page.mouse.wheel(0, 2200)
+                        page.wait_for_timeout(max(100, CONFIG.browser_scroll_delay_ms))
+
+                    rendered = page.content()
+                    soup = BeautifulSoup(rendered, "html.parser")
+                    pages.append(page_url)
+                    images.update(extract_image_urls(soup, page_url))
+
+                    # currentSrc содержит уже выбранный браузером URL из srcset.
+                    for item in page.locator("img").all():
+                        current_src = item.get_attribute("src") or item.get_attribute("data-src")
+                        if current_src:
+                            normalized = normalize_url(current_src, page_url)
+                            if normalized and looks_like_image(normalized):
+                                images.add(normalized)
+
+                    print(f"Браузерная страница {len(pages)}/{max_pages}: {page_url} | изображений: {len(images)}")
+                    if follow_links and depth < max_depth:
+                        for anchor in page.locator("a[href]").all():
+                            href = anchor.get_attribute("href") or ""
+                            link = normalize_url(href, page_url)
+                            if link and same_origin(link, origin) and likely_html_page(link) and link not in visited:
+                                queue.append((link, depth + 1))
+                except Exception as error:
+                    print(f"Пропуск динамической страницы: {page_url} — {error}", file=sys.stderr)
+        finally:
+            context.close()
+            browser.close()
+    return pages, sorted(images)
+
+
 def fetch(session: requests.Session, url: str, *, stream: bool = False) -> requests.Response:
     response = session.get(url, timeout=CONFIG.timeout, stream=stream)
     response.raise_for_status()
@@ -202,6 +268,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max-pages", type=int, default=CONFIG.max_pages)
     parser.add_argument("--max-depth", type=int, default=CONFIG.max_depth)
     parser.add_argument("--no-follow", action="store_true", help="Не переходить по внутренним ссылкам")
+    parser.add_argument("--browser", action="store_true", help="Использовать Chromium для JavaScript-сайтов")
     return parser.parse_args()
 
 
@@ -213,7 +280,22 @@ def main() -> int:
     ensure_directories()
     session = create_session()
     try:
-        pages, images = crawl_site(session, args.url, max(1, args.max_pages), max(0, args.max_depth), CONFIG.follow_links and not args.no_follow)
+        use_browser = CONFIG.use_browser or args.browser
+        if use_browser:
+            pages, images = browser_crawl(
+                args.url,
+                max(1, args.max_pages),
+                max(0, args.max_depth),
+                CONFIG.follow_links and not args.no_follow,
+            )
+        else:
+            pages, images = crawl_site(
+                session,
+                args.url,
+                max(1, args.max_pages),
+                max(0, args.max_depth),
+                CONFIG.follow_links and not args.no_follow,
+            )
         count = download_images(session, images, args.output, args.max_images)
         print(f"Обработано страниц: {len(pages)}")
         print(f"Скачано новых изображений: {count}")

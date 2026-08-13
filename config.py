@@ -52,6 +52,18 @@ class Config:
     # Имя клиента, которое передаётся сайту в HTTP-заголовке User-Agent.
     user_agent: str = "UniversalImageDownloader/1.0"
 
+    # Использовать браузер Playwright для сайтов с JavaScript, например Pinterest.
+    use_browser: bool = False
+
+    # Запускать браузер без окна. Для отладки можно поставить False.
+    browser_headless: bool = True
+
+    # Сколько раз прокручивать страницу в браузерном режиме.
+    browser_scrolls: int = 8
+
+    # Пауза после прокрутки браузерной страницы в миллисекундах.
+    browser_scroll_delay_ms: int = 1200
+
 
 CONFIG = Config()
 
